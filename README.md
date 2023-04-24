@@ -22,6 +22,7 @@ send <long message>
 ##### 3. SendToPeer thread
 ##### 4. Timer thread
 ##### structure diagram
+##### UDP Packet Format
 
 ### Test Case
 #### 1. Sender p=0.3 drop ACK, Receiver p=0 drop data, window size=5, string abcdefghijk
