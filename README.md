@@ -16,13 +16,20 @@ send <long message>
 ```
 
 ### Program Structure
-#### Threads and Notifications between threads
+#### Threads and Notifications between them
 ##### 1. Listening thread
 ##### 2. Input thread
 ##### 3. SendToPeer thread
 ##### 4. Timer thread
+##### structure diagram
+
+### Test Case
+#### 1. Sender p=0.3 drop ACK, Receiver p=0 drop data, window size=5, string abcdefghijk
+#### 2. Sender p=0 drop ACK, Receiver p=0.3 drop data, window size=5, string abcdefghijk
+#### 3. Sender p=0.3 drop ACK, Receiver p=0.1 drop ACK, window size=5, string abcdefghijk
+#### 4. Sender p=0 drop ACK, Receiver p=0.3 drop data, window size=5, long string 1000chars
 
 
 ### Potential Problems
 1. If buffer size shorter than one message, 
-2. Deterministic drop interval ~ window size -> endless loop
+2. Relationship between Deterministic drop interval and window size, may cause endless loop in some special case
