@@ -82,14 +82,51 @@ Keep listening for incoming char or ack. Determine whether to drop the packet or
   - if the desired ack is receievd: check if the first char of the window is sent, if sent, restart the timer right away; if not sent, wait until it's sent.
   - if timeout: move the `to_send` back to the start of window, notify the `SendToPeer` thread to start sending.
 
-##### UDP Packet Format
-
-### Test Case
-#### 1. Sender p=0.3 drop ACK, Receiver p=0 drop data, window size=5, string abcdefghijk
-#### 2. Sender p=0 drop ACK, Receiver p=0.3 drop data, window size=5, string abcdefghijk
-#### 3. Sender p=0.3 drop ACK, Receiver p=0.1 drop ACK, window size=5, string abcdefghijk
-#### 4. Sender p=0 drop ACK, Receiver p=0.3 drop data, window size=5, long string 1000chars
 
 ## Part 2: Distance Vector
+### How to Run
+Type the following command in CLI, to start running the node.
+```
+python3 dvnode.py <local-port> <neighbor1-port> <loss-rate-1> <neighbor2-port> <loss-rate-2> ... [last]
+```
+
+### Exit the Program
+```
+ctrl+C
+```
+
+### Program Structure
+#### Features 
+- a socket keep listening for incoming DV 
+- a socket for sending out DV
+- routing table, includes:
+  - the node's DV
+  - the node's neighbor's DV
+- a list of the node's neighbors. The program assumes that the node will know all its neighbors when setting up.
+- `rece_time` table. Record the timestamp of the lastest msg received from each neighbor. It's used to determine whether a packet from the same sender need to be dropped. Due to the UDP property, a older pkt may be received later, but the info is already useless.
+
+#### Threads and Notifications between threads
+##### 1. `NodeListen` thread
+when receiving DV, if not out-of-date:
+- see if the DV contains some destinations that the node's current table don't know yet. If so, add these new destinations to routing table.
+- calculate the new DV for the node, and determine the next_hop
+- if DV updated, or the node has not sent once to neighbors yet, call the `SendDV` thread to broadcast the DV to neighbors.  
+- print out the current routing table, whenever receive a DV, no matter DV is updated or not
+##### 2. `SendDV` thread
+a subthread for sending DV to neighbors
+##### 3. `NodeMode`
+- first start the `NodeListen` threads
+- if this is the last node, then broadcast DV to its neighbors, to activate the network
 
 ## Part 3: GBN & DV Combination
+### How to Run
+Type the following command in CLI, to start running the node.
+```
+```
+
+### Exit the Program
+```
+ctrl+C
+```
+
+
