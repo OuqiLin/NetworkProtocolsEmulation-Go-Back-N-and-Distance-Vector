@@ -118,15 +118,73 @@ a subthread for sending DV to neighbors
 - first start the `NodeListen` threads
 - if this is the last node, then broadcast DV to its neighbors, to activate the network
 
-## Part 3: GBN & DV Combination
+## Part 4: GBN & DV Combination
 ### How to Run
-Type the following command in CLI, to start running the node.
+**Please make sure the `gbn_for_cn.py` file is in the same folder as `cnnode.py`, before starting the `cnnode.py` program! This is served as a simplified GBN node script, which eliminates some specific requirements (e.g. CLI input) of Part 2, but keeps all the fundamental elements of GBN protocol.**
+
+Then, type the following command in CLI, to start running the node.
 ```
+python3 cnnode.py <local-port> receive <neighbor1-port> <loss-rate-1> <neighbor2-port> <loss-rate-2> ... <neighborM-port> <loss-rate-M> send <neighbor(M+1)-port> <neighbor(M+2)-port> ... <neighborN-port> [last]
 ```
 
 ### Exit the Program
 ```
 ctrl+C
 ```
+
+### Program Structure
+#### Features
+- CnNode
+  - a socket keep listening for: 
+    - (1) DV 
+    - (2) probe packets, when performs as a probe receiver
+    - (3) ack of probe packets, when performs as a probe sender
+  - a socket for sending out: 
+    - updated DV / keep sending DV for every 5 seconds (Note: this is different from the requirement from pdf, but conformed to https://edstem.org/us/courses/35445/discussion/3034975)
+    - ack of probe packet, when performs as a probe receiver
+  - Routing Table
+  - `recv_time` table. Same function as part 3, used in DV algorithm.
+  - lists containing who are the node's neighbors: `all_neighbor`, `send_probe_to`, `recv_prob_from`. 
+  - `GBN_NODES` dictionary, used when performs as probe sender, key-value pair is `probe_receiver: corresponding_gbn_node_instance`.
+  - `drop_rate_table`: record the ideal drop rate, for each probe sender sending probe to this cnnode.
+  - `recv_loss_counter`: record the actual drop rate that this cnnode has achieved, for each probe sender sending probe to this cnnode.
+  - `correctly_received`: similar to `correctly_received` counter in part 2, but now keep seperate `correctly_received` counter for each probe sender sending probe to this node.
+  
+- GbnNode
+  - when CnNode is performing as a probe sender, for each probe receiver, create a seperate GbnNode instance to continuously send probe packet
+  - maintains a `sent_loss_counter`, record the actual amount of packets sent out and actual amount of ack received. This is for print out the status message, when performs as a probe sender.
+
+#### Threads and Notifications between threads
+##### 1. NodeListen
+if received:
+- DV: do same calculation as part 3. Above that, this node will also use the distance from sender to itself in this DV to update its own DV. This is the major upgrade from part 3. 
+  - if new DV is different from old DV, or the node has not sent DV once, call the `SendDV` thread to send the current DV.
+  - when received a DV, if the node has not start to send probes yet, start the `ProbeController` thread, to manage the stuff of sending probes.
+  - print out current routing table, whenever a DV is received.
+
+- Probe pakcets, when performs as probe receiver
+  - decide whether to drop the probe or not
+  - update the `recv_loss_counter` for the probe's sender
+  - if probe not lost, reply ack and update `correct_received` counter
+
+- ack of probe, when performs as probe sender
+  - retrieve the corresponding GbnNode for this probe's receiver
+  - if ack pkt num is desired, move the window, clear the buffer, notify the timer to restart, notify the `SendToPeer` thread to send new chars exposed in the window, notify the `TakeInput` thread to put chars in newly available space.
+
+##### 2. SendDv
+A subthread, will be called when (1) DV updated (2) Every 5 seconds by `KeepSendingDV` thread.  
+Routing Table will be printed everytime DV sent.
+
+##### 3. KeepSendingDV
+Sleep every 5 seconds, then wake up to send its current DV to neighbors. This thread sits aside and never stops.
+
+##### 4. ProbeController
+will be activated when called by (1) `NodeListen` thread, if is not the last node, or (2)`NodeMode` main thread, if is the last node.  
+create a seperate GbnNode instance for each probe receiver, and start continuously send probes.  
+
+
+##### 5. KeepPrintingStatus
+Sleep every 1 second, wake up and read the `sent_loss_counter` to print for each probe receiver of the current node, what is the actual number of probes sent, and what is the actual number of packets lost (is lost if not receive ack, because ack never fails).
+
 
 
