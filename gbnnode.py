@@ -6,10 +6,9 @@ from threading import Condition
 import sys # for CLI
 import os # os.exit()
 import time
+import signal
 
 
-# BUFFER_LEN = 200
-# PKT_NUM=0 # keep increasing, even for the 2nd message
 
 
 def packetFormat(type, pktNum="", char="", last_pkt=False):
@@ -17,7 +16,7 @@ def packetFormat(type, pktNum="", char="", last_pkt=False):
     type:
     data/ack
     pktNum:
-    1,..., len(string) when type==data, None when type==ack
+    1,..., keep increasing continuously for all input strings
     char:
     each char a pkt when type==data, None when type==ack
     last_pkt: -- used to print out loss rate calculation
@@ -53,6 +52,8 @@ class gbnNode():
         self.drop_param = drop_param
 
         self.buffer_len = 10000
+        # Any reasonable buffer size satisfy!!! can wrap around by my design (not shorter than window though)
+        # you can try some buffer size like 10, 20 with a long string len >> 10
         self.buffer = [None] * self.buffer_len # can be assessed by both send and listen thread
         """
         [(pktNum, pkt), (pktNum, pkt), ...]
@@ -81,29 +82,6 @@ class gbnNode():
 
         self.recv_pkt_cnt = 0
         self.drop_pkt_cnt = 0
-
-    """
-    send thread: 
-        msg (break into chars)
-            while True: 
-            # this layer because we want to keep checking if window has sth to send, 
-            # even when at the last round, all things in window have sent
-                while window has chars not sent out: 
-                    lock send socket, send the char
-                    if senting-seq-num == send_base (1st time sent out): start the timer for the send_base 
-                    if senting-seq-num > send_base (meaning still waiting for send_base's ack): don't care about the timer
-                
-                if last char is acked: 
-                    break
-                    # then take another "send <msg>" input
-
-    listen thread:     
-        ack 
-            -- if seq num == send_base, move window, send_base ++1, restart timer for new send_base
-            -- if seq num != send_base, discard
-        
-        msg (send ack back -- lock send socket), 
-    """
 
 
     def TakeInput(self):
@@ -162,16 +140,19 @@ class gbnNode():
                 # put (pktNum, pkt) into buffer
                 self.buffer[self.buffer_idx] = (self.pkt_num, pkt)
                 # print(f"\nPUT {self.pkt_num} INTO BUFFER", end="")
-                self.buffer_idx = (self.buffer_idx + 1) % self.buffer_len # wrap around
-                self.pkt_num += 1
+                self.buffer_idx = (self.buffer_idx + 1) % self.buffer_len # where to insert a new pkt into buffer in the next round , wrap around
+                self.pkt_num += 1 # uniquely identify each char
+
+                # print("\n BUFFER LOOKS LIKE:")
+                # print(self.buffer)
 
                 if self.buffer[self.buffer_idx] is not None:
                     self.buffer_full = True
 
                 if (self.buffer[self.buffer_idx] is not None) or (n == len(chars)-1):
-                    # 2nd condition: deal with short string but long buffer
-                    print("\n BUFFER LOOKS LIKE:")
-                    print(self.buffer)
+                    # 1st condition: buffer alreay full (although msg not fully put into buffer)
+                    # 2nd condition: deal with short string but long buffer & only one message buffer never full
+
                     self.nothing_to_send = False
                     with self.send_condition:
                         self.send_condition.notify() # after fill out the buffer for the first time, ask the send thread begin sending
@@ -242,24 +223,25 @@ class gbnNode():
         # wait() method is used to block the thread and wait until some other thread notifies it by calling the notify() or notify_all() method
         # or if the timeout occurs.
         while True:
-            with self.timer_condition:
-                good_ack = self.timer_condition.wait(0.5)
-            if good_ack:
-                # if timer_condition be notified by listening thread, means that ack is received
-                # start new timer for the oldest in-flight pkt
+            if not self.last_ack_received:
+                with self.timer_condition:
+                    good_ack = self.timer_condition.wait(0.5)
+                if good_ack:
+                    # if timer_condition be notified by listening thread, means that ack is received
+                    # start new timer for the oldest in-flight pkt
 
-                # if the first char of window has not been sent, wait until it be sent, then start the timer
-                while True:
-                    if self.to_send != self.send_base:
-                        break
-            else:
-                # if timeout happens, let the send thread send from window beginning
-                print(f"\n[{time.time()}] packet{self.send_base} timeout", end="")
-                self.to_send = self.send_base
-                self.nothing_to_send = False
-                with self.send_condition:
-                    # print("\nTIMER THREAD NOTIFY SEND THREAD", end="")
-                    self.send_condition.notify()
+                    # if the first char of window has not been sent, wait until it be sent, then start the timer
+                    while True:
+                        if self.to_send != self.send_base:
+                            break
+                else:
+                    # if timeout happens, let the send thread send from window beginning
+                    print(f"\n[{time.time()}] packet{self.send_base} timeout", end="")
+                    self.to_send = self.send_base
+                    self.nothing_to_send = False
+                    with self.send_condition:
+                        # print("\nTIMER THREAD NOTIFY SEND THREAD", end="")
+                        self.send_condition.notify()
 
 
 
@@ -305,8 +287,6 @@ class gbnNode():
                     # move forward the window
                     self.send_base = (self.send_base + distance + 1) % self.buffer_len
                     print(f"\n[{time.time()}] ACK{pktNum} received, window moves to {self.send_base}", end="")
-
-
 
                     # notify the timer to stop timing and restart for the oldest in-flight packet
                     with self.timer_condition:
@@ -408,6 +388,11 @@ class gbnNode():
         self.thread_input.start()
         # print("\n>>> Node start to take user input, whenever buffer has space", end="")
 
+def signal_handler(signal, frame):
+    print("\nProgram interrupted. Exiting...")
+    global sigint_received
+    sigint_received = True
+    os._exit(1)
 
 
 if __name__ == "__main__":
@@ -416,6 +401,9 @@ if __name__ == "__main__":
         print("\nPlease use valid input command like:", end="")
         print("\npython3 gbnnode.py <self-port> <peer-port> <window-size> [ -d <value-of-n> | -p <value-of-p>]", end="")
         sys.exit(1)
+
+    # Set up the signal handler to catch SIGINT
+    signal.signal(signal.SIGINT, signal_handler)
 
     # split the command
     drop_pkt = sys.argv[4]
@@ -486,3 +474,9 @@ if __name__ == "__main__":
     # create Node instance, start the NodeMode
     node = gbnNode(self_port, peer_port, window_size, drop_pkt, drop_param)
     node.NodeMode()
+
+
+    # Wait for SIGINT to be received, let the main thread not terminate
+    sigint_received = False
+    while not sigint_received:
+        time.sleep(1)
