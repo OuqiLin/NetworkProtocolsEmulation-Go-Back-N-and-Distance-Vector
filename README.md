@@ -186,5 +186,6 @@ create a seperate GbnNode instance for each probe receiver, and start continuous
 ##### 5. KeepPrintingStatus
 Sleep every 1 second, wake up and read the `sent_loss_counter` to print for each probe receiver of the current node, what is the actual number of probes sent, and what is the actual number of packets lost (is lost if not receive ack, because ack never fails).
 
-
+### Estimated Convergence Time
+Usually will converge after 2-3 minutes. Note that may observe some seconds of "pause" that does not print anything, this is normal and please don't kill the program in the interval.
 
