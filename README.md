@@ -3,7 +3,7 @@
 - Name: Ouqi Lin
 - UNI: ol2251
 
-## Part 1: Go Back N
+## Part 2: Go Back N
 ### How to Run
 Type the following command in CLI, to start running the node. The node can behave like both sender and receiver.
 ```
@@ -83,7 +83,7 @@ Keep listening for incoming char or ack. Determine whether to drop the packet or
   - if timeout: move the `to_send` back to the start of window, notify the `SendToPeer` thread to start sending.
 
 
-## Part 2: Distance Vector
+## Part 3: Distance Vector
 ### How to Run
 Type the following command in CLI, to start running the node.
 ```
